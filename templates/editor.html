@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>Rossum</title>
+<style type="text/css" media="screen">#editor{position:absolute;top:0;right:0;bottom:0;left:0}</style>
+</head>
+<body>
+<div id="editor">{{ editor_text }}</div>
+<script src="https://cdn.rawgit.com/ajaxorg/ace-builds/3fb55e8e374ab02ce47c1ae55ffb60a1835f3055/src-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/1.4.4/socket.io.min.js" type="text/javascript" charset="utf-8"></script>
+<script>
+    var editor = ace.edit("editor");
+    editor.setTheme("ace/theme/monokai");
+    editor.getSession().setMode("ace/mode/c_cpp");
+    editor.setShowPrintMargin(false);
+    editor.$blockScrolling = Infinity;
+    window.serialUpdate = null;
+    window.uploadError = false;
+    window.authKey = "{{ upload_key }}";
+    window.socket = io("http://" + document.domain + ":" + location.port);
+    window.socket.on("line", function(line) {
+        editor.setValue(editor.getValue() + "\n" + line["content"]);
+        window.editor.gotoLine(window.editor.session.getLength());
+    });
+    window.socket.on("error", function(line) {
+        console.error(line["content"]);
+    });
+    window.socket.on("uploaderror", function(line) {
+        window.uploadError = true;
+    });
+    function reafy() {
+        editor.setReadOnly(false);
+        editor.setHighlightActiveLine(true);
+        editor.getSession().setMode("ace/mode/c_cpp");
+        editor.setValue(window.contents);
+        window.contents = "";
+    };
+    window.socket.on("reafy", function(data) {
+        reafy();
+    });
+    window.socket.on("serline", function(line) {
+        console.log(line["content"]);
+    });
+    function serwrite(data) {
+        window.socket.emit("serwrite", {data: data, auth: window.authKey});
+    };
+    function updateSerial() {
+        if (window.serialConsole) {
+            window.socket.emit("serwrite", {data: "", auth: window.authKey});
+        }
+    };
+    function seropen() {
+        window.socket.emit("seropen", {auth: window.authKey});
+        window.serialUpdate = window.setInterval(updateSerial, 400);
+    };
+    function serclose() {
+        window.socket.emit("serclose", {auth: window.authKey});
+        if (window.serialUpdate !== null) {
+            window.clearInterval(window.serialUpdate);
+            window.serialUpdate = null;
+        }
+    };
+    editor.commands.addCommand({
+        name: "Upload",
+        bindKey: {win: "Ctrl-Q"},
+        exec: function(editor) {
+            editor.setReadOnly(true);
+            editor.setHighlightActiveLine(false);
+            window.contents = editor.getValue();
+			editor.getSession().setMode("ace/mode/plain_text");
+            editor.setValue("Sending request...");
+            var data = new FormData();
+            data.append("content", window.contents);
+            data.append("auth", window.authKey);
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", "http://" + document.domain + ":" + location.port + "/upload", true);
+            xhr.onload = function (e) {
+              if (xhr.readyState === 4) {
+                if (xhr.status === 200) {
+                  console.log(xhr.responseText);
+                } else {
+                  console.error(xhr.statusText);
+                }
+              }
+            };
+            xhr.onerror = function (e) {
+              console.error(xhr.statusText);
+            };
+            xhr.send(data);
+        },
+        readOnly: false
+    });
+    editor.commands.addCommand({
+        name: "Continue after Upload Error",
+        bindKey: {win: "Ctrl-I"},
+        exec: function(editor) {
+          if(window.uploadError) {
+              window.uploadError = false;
+              reafy();
+          }
+        },
+        readOnly: false
+    });
+    console.log("Your Diceword passphrase is '{{ diceword }}'");
+</script>
+</body>
+</html>
